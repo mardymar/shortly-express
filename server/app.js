@@ -17,17 +17,19 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 
 
-app.get('/', 
+app.get('/',
 (req, res) => {
+  console.log('index')
   res.render('index');
 });
 
-app.get('/create', 
+app.get('/create',
 (req, res) => {
+  console.log('create')
   res.render('index');
 });
 
-app.get('/links', 
+app.get('/links',
 (req, res, next) => {
   models.Links.getAll()
     .then(links => {
@@ -38,7 +40,7 @@ app.get('/links',
     });
 });
 
-app.post('/links', 
+app.post('/links',
 (req, res, next) => {
   var url = req.body.url;
   if (!models.Links.isValidUrl(url)) {
@@ -78,8 +80,36 @@ app.post('/links',
 // Write your authentication routes here
 /************************************************************/
 
+app.post('/signup', (req, res, next) => {
 
+  models.Users.create(req.body)
+    .then(() => {
+      res.redirect('/');
+    }).catch((error) => {
+      if (error.code === 'ER_DUP_ENTRY') {
+        res.redirect('/signup');
+      }
+    });
+});
 
+app.post('/login', (req, res, next) => {
+  //console.log(req.body, 'login')
+  models.Users.get({username: req.body.username})
+  .then((result) => {
+    //console.log(result, "RESULT!!!!!!!!!!!")
+    if(result) {
+      if(models.Users.compare(req.body.password, result.password, result.salt)) {
+        res.redirect('/')
+      } else {
+        res.redirect('/login');
+      }
+    } else {
+      //console.log('Invalid Login');
+      res.redirect('/login');
+    }
+
+  }
+)});
 /************************************************************/
 // Handle the code parameter route last - if all other routes fail
 // assume the route is a short code and try and handle it here.
