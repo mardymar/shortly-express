@@ -15,17 +15,16 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
+app.use(require('./middleware/cookieParser'));
+app.use(Auth.createSession);
 
 
-app.get('/',
-(req, res) => {
-  console.log('index')
+
+app.get('/', Auth.verifySession, (req, res) => {
   res.render('index');
 });
 
-app.get('/create',
-(req, res) => {
-  console.log('create')
+app.get('/create', Auth.verifySession, (req, res) => {
   res.render('index');
 });
 
@@ -40,7 +39,7 @@ app.get('/links',
     });
 });
 
-app.post('/links',
+app.post('/links', Auth.verifySession,
 (req, res, next) => {
   var url = req.body.url;
   if (!models.Links.isValidUrl(url)) {
@@ -80,23 +79,33 @@ app.post('/links',
 // Write your authentication routes here
 /************************************************************/
 
-app.post('/signup', (req, res, next) => {
-
-  models.Users.create(req.body)
-    .then(() => {
-      res.redirect('/');
-    }).catch((error) => {
-      if (error.code === 'ER_DUP_ENTRY') {
-        res.redirect('/signup');
-      }
-    });
+app.get('/login', (req, res) => {
+  res.render('login');
 });
 
 app.post('/login', (req, res, next) => {
-  //console.log(req.body, 'login')
+  var username = req.body.username;
+  var password = req.body.password;
+
   models.Users.get({username: req.body.username})
-  .then((result) => {
+  .then( (user) => {
     //console.log(result, "RESULT!!!!!!!!!!!")
+      if (!user || !models.Users.compare(password, user.password, user.salt)) {
+        // user doesn't exist or the password doesn't match
+        throw new Error('Username and password do not match');
+      }
+
+      return models.Sessions.update({ hash: req.session.hash }, { userId: user.id });
+   })
+    .then(() => {
+      res.redirect('/');
+    })
+    .error(error => {
+      res.status(500).send(error);
+    })
+    .catch(() => {
+      res.redirect('/login');
+    });
     if(result) {
       if(models.Users.compare(req.body.password, result.password, result.salt)) {
         res.redirect('/')
@@ -109,12 +118,55 @@ app.post('/login', (req, res, next) => {
     }
 
   }
-)});
+)
 /************************************************************/
 // Handle the code parameter route last - if all other routes fail
 // assume the route is a short code and try and handle it here.
 // If the short-code doesn't exist, send the user to '/'
 /************************************************************/
+
+app.get('/logout', (req, res, next) => {
+
+  return models.Sessions.delete({ hash: req.cookies.shortlyid })
+    .then(() => {
+      res.clearCookie('shortlyid');
+      res.redirect('/login');
+    })
+    .error(error => {
+      res.status(500).send(error);
+    });
+});
+
+
+app.get('/signup', (req, res) => {
+  res.render('signup');
+});
+
+app.post('/signup', (req, res, next) => {
+  var username = req.body.username;
+  var password = req.body.password;
+
+  return models.Users.get({ username })
+    .then(user => {
+      if (user) {
+        throw user;
+      }
+
+      return models.Users.create({ username, password });
+    })
+    .then(results => {
+      return models.Sessions.update({ hash: req.session.hash }, { userId: results.insertId });
+    })
+    .then(() => {
+      res.redirect('/');
+    })
+    .error(error => {
+      res.status(500).send(error);
+    })
+    .catch(user => {
+      res.redirect('/signup');
+    });
+});
 
 app.get('/:code', (req, res, next) => {
 
@@ -141,3 +193,4 @@ app.get('/:code', (req, res, next) => {
 });
 
 module.exports = app;
+
